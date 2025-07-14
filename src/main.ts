@@ -146,6 +146,7 @@ const mainLoop = async () => {
               e
             );
             failedDownloadedSongs.push(song);
+            continue;
           }
         }
       }
