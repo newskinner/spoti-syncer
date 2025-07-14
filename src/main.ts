@@ -103,39 +103,40 @@ const mainLoop = async () => {
       const currentLiked = await getLikedSongs();
       const newSongs = findNewSongs(prevLiked, currentLiked);
       if (newSongs.length > 0 && prevLiked !== currentLiked) {
-        fs.readFile(publishedPath, async (err, data) => {
-          if (err) throw err;
-          for (const song of newSongs) {
-            if (data.includes(song.track.id)) {
-              console.error("Skipping, this track already exists.");
-              continue;
-            }
-            const meta = `${song.track.artists[0].name} - ${song.track.name} (${song.track.album.name})`;
-            console.log(`Downloading ${meta}`);
-            try {
-              if (await downloadSong(song)) {
-                await bot.telegram.sendAudio(channelID, {
-                  source: path.join(dirPath, `${song.track.name}.mp3`),
-                });
-                fs.appendFile(
-                  publishedPath,
-                  `${song.track.id}\n`,
-                  { encoding: "utf-8" },
-                  () => {}
-                );
-                console.log(`${meta} has been published to the channel`);
-                fs.unlink(
-                  path.join(dirPath, `${song.track.name}.mp3`),
-                  () => {}
-                );
-                console.log(`${meta} file has been unlinked (removed) locally`);
-              }
-            } catch (e) {
-              console.error("Got an error when downloading:", e);
-              continue;
-            }
+        const data = await fs.promises.readFile(publishedPath, "utf-8");
+        for (const song of newSongs) {
+          if (data.includes(song.track.id)) {
+            console.error("Skipping, this track already exists.");
+            continue;
           }
-        });
+
+          const meta = `${song.track.artists[0].name} - ${song.track.name} (${song.track.album.name})`;
+          console.log(`Downloading ${meta}`);
+
+          try {
+            if (await downloadSong(song)) {
+              const filePath = path.join(dirPath, `${song.track.name}.mp3`);
+
+              await bot.telegram.sendAudio(channelID, {
+                source: filePath,
+              });
+
+              await fs.promises.appendFile(
+                publishedPath,
+                `${song.track.id}\n`,
+                "utf-8"
+              );
+
+              console.log(`${meta} has been published to the channel`);
+
+              await fs.promises.unlink(filePath);
+              console.log(`${meta} file has been unlinked (removed) locally`);
+            }
+          } catch (e) {
+            console.error("Got an error when downloading:", e);
+            continue;
+          }
+        }
       }
       prevLiked = currentLiked;
       await delay(config.globalSyncPeriodSec);
