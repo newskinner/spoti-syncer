@@ -28,6 +28,7 @@ const bot = new Telegraf(config.telegramBotKey, { handlerTimeout: 9_000_000 });
 const channelID = config.telegramSyncChannelID;
 const dirPath: string = os.tmpdir();
 const tokenPath = path.join(__dirname, "spotify-token");
+const publishedPath: string = path.resolve(__dirname, "../published.txt");
 const scopes = ["user-library-read", "playlist-read-private"];
 let isRunning = true;
 
@@ -96,29 +97,45 @@ const refreshAccessToken = async () => {
 const mainLoop = async () => {
   while (isRunning) {
     try {
-      console.log("Setting up the token.");
+      console.log("\nSetting up the token.");
       await refreshAccessToken();
-      console.log("Fetching your liked songs. Wait a little.");
+      console.log("Fetching your liked songs.");
       const currentLiked = await getLikedSongs();
       const newSongs = findNewSongs(prevLiked, currentLiked);
       if (newSongs.length > 0 && prevLiked !== currentLiked) {
-        for (const song of newSongs) {
-          const meta = `${song.track.artists[0].name} - ${song.track.name} (${song.track.album.name})`;
-          console.log(`Downloading ${meta}`);
-          try {
-            if (await downloadSong(song)) {
-              await bot.telegram.sendAudio(channelID, {
-                source: path.join(dirPath, `${song.track.name}.mp3`),
-              });
-              console.log(`${meta} has been published to the channel`);
-              fs.unlink(path.join(dirPath, `${song.track.name}.mp3`), () => {});
-              console.log(`${meta} file has been unlinked (removed) locally`);
+        fs.readFile(publishedPath, async (err, data) => {
+          if (err) throw err;
+          for (const song of newSongs) {
+            if (data.includes(song.track.id)) {
+              console.error("Skipping, this track already exists.");
+              continue;
             }
-          } catch (e) {
-            console.error("Got an error when downloading:", e);
-            continue;
+            const meta = `${song.track.artists[0].name} - ${song.track.name} (${song.track.album.name})`;
+            console.log(`Downloading ${meta}`);
+            try {
+              if (await downloadSong(song)) {
+                await bot.telegram.sendAudio(channelID, {
+                  source: path.join(dirPath, `${song.track.name}.mp3`),
+                });
+                fs.appendFile(
+                  publishedPath,
+                  `${song.track.id}\n`,
+                  { encoding: "utf-8" },
+                  () => {}
+                );
+                console.log(`${meta} has been published to the channel`);
+                fs.unlink(
+                  path.join(dirPath, `${song.track.name}.mp3`),
+                  () => {}
+                );
+                console.log(`${meta} file has been unlinked (removed) locally`);
+              }
+            } catch (e) {
+              console.error("Got an error when downloading:", e);
+              continue;
+            }
           }
-        }
+        });
       }
       prevLiked = currentLiked;
       await delay(config.globalSyncPeriodSec);
