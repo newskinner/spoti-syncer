@@ -94,6 +94,7 @@ const refreshAccessToken = async () => {
   spotifyApi.setAccessToken(data.body.access_token);
 };
 
+let failedDownloadedSongs: SpotifyApi.SavedTrackObject[] = [];
 const mainLoop = async () => {
   while (isRunning) {
     try {
@@ -101,7 +102,12 @@ const mainLoop = async () => {
       await refreshAccessToken();
       console.log("Fetching your liked songs.");
       const currentLiked = await getLikedSongs();
-      const newSongs = findNewSongs(prevLiked, currentLiked);
+      let newSongs = findNewSongs(prevLiked, currentLiked);
+      if (failedDownloadedSongs.length > 0) {
+        console.log(`Retrying ${failedDownloadedSongs.length} failed songs.`);
+        newSongs = [...failedDownloadedSongs, ...newSongs];
+        failedDownloadedSongs = []; // RESET
+      }
       if (newSongs.length > 0 && prevLiked !== currentLiked) {
         const data = await fs.promises.readFile(publishedPath, "utf-8");
         for (const song of newSongs) {
@@ -131,10 +137,15 @@ const mainLoop = async () => {
 
               await fs.promises.unlink(filePath);
               console.log(`${meta} file has been unlinked (removed) locally`);
+            } else {
+              throw new Error("Download failed.");
             }
           } catch (e) {
-            console.error("Got an error when downloading:", e);
-            continue;
+            console.error(
+              "Got an error when downloading. Added to failed queue.",
+              e
+            );
+            failedDownloadedSongs.push(song);
           }
         }
       }
